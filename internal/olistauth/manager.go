@@ -52,7 +52,15 @@ func (m *Manager) AccessToken(ctx context.Context) (string, error) {
 	source := m.config.TokenSource(ctx, &oauth2.Token{RefreshToken: saved.RefreshToken, Expiry: time.Unix(1, 0)})
 	refreshed, err := source.Token()
 	if err != nil {
-		return "", err
+		var retrieve *oauth2.RetrieveError
+		if errors.As(err, &retrieve) && retrieve.ErrorCode == "invalid_grant" {
+			m.needsReauth = true
+			return "", errors.New("account requires reauthorization")
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", errors.New("Olist token refresh failed")
 	}
 	if refreshed.AccessToken == "" || refreshed.RefreshToken == "" {
 		return "", errors.New("provider returned incomplete token")
