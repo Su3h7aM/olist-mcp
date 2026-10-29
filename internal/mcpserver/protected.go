@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 )
 
@@ -15,6 +16,20 @@ import (
 // verifier. The verifier must validate issuer, audience, grant and revocation;
 // it must not expose credentials in its errors. This does not create an OAuth server.
 func Protected(publicURL string, verifier auth.TokenVerifier) (http.Handler, http.Handler, error) {
+	return protectedHandler(publicURL, verifier, Handler())
+}
+
+// ProtectedMirror serves account-scoped mirror reads behind the token verifier.
+func ProtectedMirror(publicURL string, verifier auth.TokenVerifier, mirror Mirror) (http.Handler, http.Handler, error) {
+	server, err := NewWithMirror(mirror)
+	if err != nil {
+		return nil, nil, err
+	}
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	return protectedHandler(publicURL, verifier, handler)
+}
+
+func protectedHandler(publicURL string, verifier auth.TokenVerifier, handler http.Handler) (http.Handler, http.Handler, error) {
 	u, err := url.Parse(publicURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || verifier == nil {
 		return nil, nil, errors.New("HTTPS public origin and token verifier required")
@@ -32,5 +47,5 @@ func Protected(publicURL string, verifier auth.TokenVerifier) (http.Handler, htt
 	}
 	middleware := auth.RequireBearerToken(safe, &auth.RequireBearerTokenOptions{ResourceMetadataURL: metadataURL, Scopes: []string{"olist:read"}})
 	metadata := auth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{Resource: resource, AuthorizationServers: []string{origin}, ScopesSupported: []string{"olist:read", "olist:write"}, BearerMethodsSupported: []string{"header"}})
-	return middleware(Handler()), metadata, nil
+	return middleware(handler), metadata, nil
 }

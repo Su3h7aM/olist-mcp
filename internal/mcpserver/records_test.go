@@ -27,15 +27,13 @@ func TestListRecordsEnforcesGrant(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	server, err := NewWithMirror(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	verifier := func(context.Context, string, *http.Request) (*auth.TokenInfo, error) {
 		return &auth.TokenInfo{UserID: "owner", Expiration: time.Now().Add(time.Minute), Scopes: []string{"olist:read"}, Extra: map[string]any{"accounts": []string{"a"}}}, nil
 	}
-	wrapped := auth.RequireBearerToken(verifier, nil)(handler)
+	wrapped, _, err := ProtectedMirror("https://example.com", verifier, db)
+	if err != nil {
+		t.Fatal(err)
+	}
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("Authorization", "Bearer example")
 		wrapped.ServeHTTP(w, r)
