@@ -51,12 +51,17 @@ func (m *Manager) AccessToken(ctx context.Context) (string, error) {
 	}
 	// Mark a refresh in flight before the network call. If the process dies or
 	// persistence fails, the next process must require reauthorization.
-	if guarded, ok := m.store.(interface {
+	guarded, ok := m.store.(interface {
 		BeginRefresh(context.Context, string) error
-	}); ok {
-		if err := guarded.BeginRefresh(ctx, m.account); err != nil {
-			return "", errors.New("cannot begin token refresh")
+	})
+	if !ok {
+		return "", errors.New("token store does not support durable refresh")
+	}
+	if err := guarded.BeginRefresh(ctx, m.account); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
 		}
+		return "", errors.New("cannot begin token refresh")
 	}
 	source := m.config.TokenSource(ctx, &oauth2.Token{RefreshToken: saved.RefreshToken, Expiry: time.Unix(1, 0)})
 	refreshed, err := source.Token()

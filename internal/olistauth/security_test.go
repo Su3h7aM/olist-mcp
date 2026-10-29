@@ -60,6 +60,8 @@ func (s *memStore) Put(_ context.Context, account string, tok tokenstore.Token) 
 	return nil
 }
 
+func (s *memStore) BeginRefresh(ctx context.Context, account string) error { return ctx.Err() }
+
 func (s *memStore) snapshot(account string) (tokenstore.Token, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
