@@ -71,6 +71,10 @@ func Open(path string, key []byte) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err = db.Exec(`CREATE TABLE IF NOT EXISTS refresh_pending (account_id TEXT PRIMARY KEY)`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, aead: aead}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
@@ -90,13 +94,31 @@ func (s *Store) Put(ctx context.Context, account string, token Token) error {
 	sealed := s.aead.Seal(nonce, nonce, data, []byte(account))
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err = s.db.ExecContext(ctx, `INSERT INTO tokens(account_id,ciphertext) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET ciphertext=excluded.ciphertext`, account, sealed)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO tokens(account_id,ciphertext) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET ciphertext=excluded.ciphertext`, account, sealed)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM refresh_pending WHERE account_id=?`, account); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func (s *Store) Get(ctx context.Context, account string) (Token, error) {
 	var out Token
 	if account == "" {
 		return out, errors.New("account required")
+	}
+	var pending int
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM refresh_pending WHERE account_id=?`, account).Scan(&pending); err != nil {
+		return out, err
+	}
+	if pending != 0 {
+		return out, errors.New("account requires reauthorization: refresh interrupted")
 	}
 	var sealed []byte
 	if err := s.db.QueryRowContext(ctx, `SELECT ciphertext FROM tokens WHERE account_id=?`, account).Scan(&sealed); err != nil {
@@ -114,4 +136,13 @@ func (s *Store) Get(ctx context.Context, account string) (Token, error) {
 		return Token{}, fmt.Errorf("invalid token data: %w", err)
 	}
 	return out, nil
+}
+
+// BeginRefresh durably records an uncertain token rotation before contacting the provider.
+func (s *Store) BeginRefresh(ctx context.Context, account string) error {
+	if account == "" {
+		return errors.New("account required")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO refresh_pending(account_id) VALUES(?)`, account)
+	return err
 }

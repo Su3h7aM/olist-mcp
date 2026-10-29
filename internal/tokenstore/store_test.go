@@ -50,3 +50,36 @@ func TestEncryptedTokensAndAccountBinding(t *testing.T) {
 		t.Fatal("wrong key accepted")
 	}
 }
+
+func TestInterruptedRefreshRequiresReauthorizationAfterReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "control.db")
+	key := bytes.Repeat([]byte{9}, 32)
+	s, err := Open(path, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Put(ctx, "a", Token{"a", "r", time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.BeginRefresh(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err = s.Get(ctx, "a"); err == nil {
+		t.Fatal("interrupted refresh was not detected")
+	}
+	if err = s.Put(ctx, "a", Token{"new", "new-r", time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Get(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+}
