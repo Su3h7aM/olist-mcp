@@ -47,6 +47,11 @@ func (s *Store) Put(ctx context.Context, token string, g Grant) error {
 			return errors.New("invalid account")
 		}
 	}
+	for _, scope := range g.Scopes {
+		if scope == "" {
+			return errors.New("invalid scope")
+		}
+	}
 	accounts, err := json.Marshal(g.Accounts)
 	if err != nil {
 		return err
@@ -85,6 +90,11 @@ func (s *Store) Verify(ctx context.Context, token string, _ *http.Request) (*aut
 	var aa, ss []string
 	if json.Unmarshal([]byte(accounts), &aa) != nil || json.Unmarshal([]byte(scopes), &ss) != nil || len(aa) == 0 || len(ss) == 0 {
 		return nil, auth.ErrInvalidToken
+	}
+	for _, value := range append(aa, ss...) {
+		if value == "" {
+			return nil, auth.ErrInvalidToken
+		}
 	}
 	return &auth.TokenInfo{UserID: subject, Expiration: expiry, Scopes: ss, Extra: map[string]any{"accounts": aa}}, nil
 }

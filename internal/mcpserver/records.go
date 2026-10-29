@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -61,7 +62,12 @@ func NewWithMirror(db Mirror) (*mcp.Server, error) {
 		out.Items = make([]Item, 0, len(rows))
 		for _, r := range rows {
 			var payload any
-			if err := json.Unmarshal(r.Payload, &payload); err != nil {
+			if !json.Valid(r.Payload) {
+				return nil, ListOutput{}, errors.New("invalid mirror record")
+			}
+			decoder := json.NewDecoder(bytes.NewReader(r.Payload))
+			decoder.UseNumber()
+			if err := decoder.Decode(&payload); err != nil {
 				return nil, ListOutput{}, errors.New("invalid mirror record")
 			}
 			out.Items = append(out.Items, Item{r.RemoteID, payload, r.ObservedAt.Format("2006-01-02T15:04:05.999999999Z07:00")})
