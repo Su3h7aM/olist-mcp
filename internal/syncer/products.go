@@ -49,7 +49,7 @@ func Products(ctx context.Context, api Reader, db Writer, account string) (Progr
 			return progress, errors.New("invalid product list response")
 		}
 		p := page.Pagination
-		if p.Offset != offset || p.Limit <= 0 || p.Total < 0 || len(page.Items) > limit || (len(page.Items) == 0 && offset < p.Total) {
+		if p.Offset != offset || p.Limit != limit || p.Total < offset || len(page.Items) > limit || len(page.Items) > p.Total-offset || (len(page.Items) < limit && offset+len(page.Items) < p.Total) {
 			return progress, errors.New("invalid product pagination")
 		}
 		for _, item := range page.Items {
@@ -66,6 +66,12 @@ func Products(ctx context.Context, api Reader, db Writer, account string) (Progr
 			detail, err := api.Get(ctx, fmt.Sprintf("/produtos/%d", id), nil)
 			if err != nil {
 				return progress, err
+			}
+			var body struct {
+				ID json.Number `json:"id"`
+			}
+			if err = json.Unmarshal(detail, &body); err != nil || body.ID.String() != strconv.FormatInt(id, 10) {
+				return progress, errors.New("product detail ID mismatch or missing")
 			}
 			if err = db.Put(ctx, store.Record{AccountID: account, Resource: "produtos", RemoteID: strconv.FormatInt(id, 10), Payload: detail, ObservedAt: time.Now().UTC()}); err != nil {
 				return progress, err
