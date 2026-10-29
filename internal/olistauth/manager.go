@@ -16,10 +16,11 @@ type TokenStore interface {
 	Put(context.Context, string, tokenstore.Token) error
 }
 type Manager struct {
-	account string
-	config  oauth2.Config
-	store   TokenStore
-	mu      sync.Mutex
+	account     string
+	config      oauth2.Config
+	store       TokenStore
+	mu          sync.Mutex
+	needsReauth bool
 }
 
 func New(account string, config oauth2.Config, store TokenStore) (*Manager, error) {
@@ -35,6 +36,9 @@ func New(account string, config oauth2.Config, store TokenStore) (*Manager, erro
 func (m *Manager) AccessToken(ctx context.Context) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.needsReauth {
+		return "", errors.New("account requires reauthorization")
+	}
 	saved, err := m.store.Get(ctx, m.account)
 	if err != nil {
 		return "", err
@@ -54,7 +58,8 @@ func (m *Manager) AccessToken(ctx context.Context) (string, error) {
 		return "", errors.New("provider returned incomplete token")
 	}
 	if err = m.store.Put(ctx, m.account, tokenstore.Token{AccessToken: refreshed.AccessToken, RefreshToken: refreshed.RefreshToken, Expiry: refreshed.Expiry}); err != nil {
-		return "", errors.New("failed to persist refreshed token; account may require reauthorization")
+		m.needsReauth = true
+		return "", errors.New("failed to persist refreshed token; account requires reauthorization")
 	}
 	return refreshed.AccessToken, nil
 }
