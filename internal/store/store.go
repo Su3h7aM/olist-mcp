@@ -86,3 +86,33 @@ func (s *Store) Get(ctx context.Context, account, resource, id string) (Record, 
 	r.ObservedAt, err = time.Parse(time.RFC3339Nano, observed)
 	return r, err
 }
+
+// List returns a bounded page for exactly one account and resource.
+// Authorization must be enforced by the caller before using this method.
+func (s *Store) List(ctx context.Context, account, resource string, limit, offset int) ([]Record, error) {
+	if account == "" || resource == "" || limit < 1 || limit > 1000 || offset < 0 {
+		return nil, fmt.Errorf("invalid list parameters")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT remote_id,payload,observed_at FROM records WHERE account_id=? AND resource=? AND deleted_at IS NULL ORDER BY remote_id LIMIT ? OFFSET ?`, account, resource, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]Record, 0)
+	for rows.Next() {
+		var r Record
+		var payload, observed string
+		r.AccountID = account
+		r.Resource = resource
+		if err = rows.Scan(&r.RemoteID, &payload, &observed); err != nil {
+			return nil, err
+		}
+		r.Payload = json.RawMessage(payload)
+		r.ObservedAt, err = time.Parse(time.RFC3339Nano, observed)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
