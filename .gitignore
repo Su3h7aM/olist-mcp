@@ -1,0 +1,16 @@
+# Runtime data and credentials
+/data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+!.env.example
+
+# Build and test artifacts
+/bin/
+/dist/
+coverage.out
+__pycache__/
+*.py[cod]
