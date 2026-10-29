@@ -86,6 +86,13 @@ func openWithClock(ctx context.Context, path string, now func() time.Time) (*Reg
 // Close releases the database.
 func (r *Registry) Close() error { return r.db.Close() }
 
+// Count returns the number of registered clients, including pending clients.
+func (r *Registry) Count(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM oauth_clients`).Scan(&count)
+	return count, err
+}
+
 // Create registers a client that is not yet approved. The client ID must be
 // 1 to 128 characters of ASCII letters, digits, dot, underscore or hyphen. The
 // redirect list must be non-empty, and each entry must be an absolute URI with
